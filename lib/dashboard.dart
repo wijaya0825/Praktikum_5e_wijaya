@@ -589,7 +589,7 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Dashboard',
+                            'Dashboard Barang - Muhammad Fadmo Wijaya',
                             style: TextStyle(
                               fontSize: 32,
                               fontWeight: FontWeight.bold,
