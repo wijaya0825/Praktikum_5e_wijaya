@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class Dashboard extends StatefulWidget {
   const Dashboard({super.key});
@@ -8,13 +13,9 @@ class Dashboard extends StatefulWidget {
 }
 
 class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
-  List<Barang> _listBarang = [
-    Barang(id: 1, nama: 'Laptop Asus ROG', harga: 15000000, stok: 15, kategori: 'Elektronik'),
-    Barang(id: 2, nama: 'Mouse Logitech G502', harga: 650000, stok: 50, kategori: 'Aksesoris'),
-    Barang(id: 3, nama: 'Keyboard Mechanical RGB', harga: 1200000, stok: 30, kategori: 'Aksesoris'),
-    Barang(id: 4, nama: 'Monitor LG 27" 4K', harga: 4500000, stok: 20, kategori: 'Elektronik'),
-    Barang(id: 5, nama: 'Webcam Logitech HD Pro', harga: 850000, stok: 25, kategori: 'Aksesoris'),
-  ];
+  List<Barang> _listBarang = [];
+  bool _isLoading = true;
+  String _errorMessage = '';
 
   final _namaController = TextEditingController();
   final _hargaController = TextEditingController();
@@ -23,6 +24,17 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
   final _searchController = TextEditingController();
 
   String _searchQuery = '';
+  File? _profileImage;
+  String? _profileImageUrl; // Untuk menyimpan URL gambar di web
+
+  // Base URL API
+  final String _baseUrl = 'http://127.0.0.1:8000/api/barang';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchBarang();
+  }
 
   @override
   void dispose() {
@@ -32,6 +44,211 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     _kategoriController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  // Fungsi untuk mengambil data dari API
+  Future<void> _fetchBarang() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = '';
+      });
+
+      final response = await http.get(Uri.parse(_baseUrl));
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        setState(() {
+          _listBarang = data.map((item) => Barang.fromJson(item)).toList();
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Gagal memuat data: ${response.statusCode}';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Error: $e';
+      });
+    }
+  }
+
+  // Fungsi untuk memilih foto profil - SOLUSI UNTUK WEB
+  Future<void> _pickProfileImage() async {
+    if (kIsWeb) {
+      // Untuk Web - menggunakan image network (contoh)
+      setState(() {
+        _profileImageUrl = 'https://via.placeholder.com/150/1E88E5/FFFFFF?text=MFW';
+      });
+      _showSnackBar('Untuk web, silakan gunakan URL gambar', Colors.blue);
+    } else {
+      // Untuk Mobile - menggunakan image picker biasa
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+      
+      if (image != null) {
+        setState(() {
+          _profileImage = File(image.path);
+        });
+      }
+    }
+  }
+
+  // Widget untuk menampilkan gambar profile yang kompatibel dengan web dan mobile
+  Widget _buildProfileImage() {
+    if (kIsWeb) {
+      // Untuk Web
+      return _profileImageUrl != null
+          ? ClipOval(
+              child: Image.network(
+                _profileImageUrl!,
+                fit: BoxFit.cover,
+                width: 120,
+                height: 120,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Icon(
+                    Icons.person,
+                    size: 60,
+                    color: Color(0xFF1E88E5),
+                  );
+                },
+              ),
+            )
+          : const Icon(
+              Icons.person,
+              size: 60,
+              color: Color(0xFF1E88E5),
+            );
+    } else {
+      // Untuk Mobile
+      return _profileImage != null
+          ? ClipOval(
+              child: Image.file(
+                _profileImage!,
+                fit: BoxFit.cover,
+                width: 120,
+                height: 120,
+              ),
+            )
+          : const Icon(
+              Icons.person,
+              size: 60,
+              color: Color(0xFF1E88E5),
+            );
+    }
+  }
+
+  // Widget untuk menampilkan gambar profile kecil di header
+  Widget _buildSmallProfileImage() {
+    if (kIsWeb) {
+      // Untuk Web
+      return _profileImageUrl != null
+          ? ClipOval(
+              child: Image.network(
+                _profileImageUrl!,
+                width: 28,
+                height: 28,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Icon(
+                    Icons.person,
+                    color: Color(0xFF1E88E5),
+                    size: 28,
+                  );
+                },
+              ),
+            )
+          : const Icon(
+              Icons.person,
+              color: Color(0xFF1E88E5),
+              size: 28,
+            );
+    } else {
+      // Untuk Mobile
+      return _profileImage != null
+          ? ClipOval(
+              child: Image.file(
+                _profileImage!,
+                width: 28,
+                height: 28,
+                fit: BoxFit.cover,
+              ),
+            )
+          : const Icon(
+              Icons.person,
+              color: Color(0xFF1E88E5),
+              size: 28,
+            );
+    }
+  }
+
+  // Fungsi untuk menambah barang ke API
+  Future<void> _tambahBarangAPI(Barang barang) async {
+    try {
+      final response = await http.post(
+        Uri.parse(_baseUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'nama': barang.nama,
+          'harga': barang.harga,
+          'stok': barang.stok,
+          'kategori': barang.kategori,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        await _fetchBarang(); // Refresh data
+        _showSnackBar('✓ Barang berhasil ditambahkan!', Colors.green);
+      } else {
+        _showSnackBar('Gagal menambah barang: ${response.statusCode}', Colors.red);
+      }
+    } catch (e) {
+      _showSnackBar('Error: $e', Colors.red);
+    }
+  }
+
+  // Fungsi untuk mengupdate barang di API
+  Future<void> _updateBarangAPI(Barang barang) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$_baseUrl/${barang.id}'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'nama': barang.nama,
+          'harga': barang.harga,
+          'stok': barang.stok,
+          'kategori': barang.kategori,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        await _fetchBarang(); // Refresh data
+        _showSnackBar('✓ Barang berhasil diubah!', Colors.blue);
+      } else {
+        _showSnackBar('Gagal mengubah barang: ${response.statusCode}', Colors.red);
+      }
+    } catch (e) {
+      _showSnackBar('Error: $e', Colors.red);
+    }
+  }
+
+  // Fungsi untuk menghapus barang dari API
+  Future<void> _deleteBarangAPI(int id) async {
+    try {
+      final response = await http.delete(Uri.parse('$_baseUrl/$id'));
+
+      if (response.statusCode == 200) {
+        await _fetchBarang(); // Refresh data
+        _showSnackBar('✓ Barang berhasil dihapus!', Colors.red);
+      } else {
+        _showSnackBar('Gagal menghapus barang: ${response.statusCode}', Colors.red);
+      }
+    } catch (e) {
+      _showSnackBar('Error: $e', Colors.red);
+    }
   }
 
   List<Barang> get _filteredBarang {
@@ -51,20 +268,15 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       icon: Icons.add_circle_outline,
       onSave: () {
         if (_validateForm()) {
-          setState(() {
-            int newId = _listBarang.isEmpty ? 1 : _listBarang.last.id + 1;
-            _listBarang.add(
-              Barang(
-                id: newId,
-                nama: _namaController.text,
-                harga: int.parse(_hargaController.text),
-                stok: int.parse(_stokController.text),
-                kategori: _kategoriController.text,
-              ),
-            );
-          });
+          final newBarang = Barang(
+            id: 0, // ID akan digenerate oleh server
+            nama: _namaController.text,
+            harga: int.parse(_hargaController.text),
+            stok: int.parse(_stokController.text),
+            kategori: _kategoriController.text,
+          );
+          _tambahBarangAPI(newBarang);
           Navigator.pop(context);
-          _showSnackBar('✓ Barang berhasil ditambahkan!', Colors.green);
           _clearControllers();
         }
       },
@@ -82,18 +294,15 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       icon: Icons.edit_outlined,
       onSave: () {
         if (_validateForm()) {
-          setState(() {
-            int index = _listBarang.indexWhere((b) => b.id == barang.id);
-            _listBarang[index] = Barang(
-              id: barang.id,
-              nama: _namaController.text,
-              harga: int.parse(_hargaController.text),
-              stok: int.parse(_stokController.text),
-              kategori: _kategoriController.text,
-            );
-          });
+          final updatedBarang = Barang(
+            id: barang.id,
+            nama: _namaController.text,
+            harga: int.parse(_hargaController.text),
+            stok: int.parse(_stokController.text),
+            kategori: _kategoriController.text,
+          );
+          _updateBarangAPI(updatedBarang);
           Navigator.pop(context);
-          _showSnackBar('✓ Barang berhasil diubah!', Colors.blue);
           _clearControllers();
         }
       },
@@ -120,7 +329,7 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Apakah Anda yakin ingin menghapus barang ini?'),
+            const Text('Apakah Anda yakin ingin menghapus barang ini?'),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
@@ -156,11 +365,8 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
           ),
           ElevatedButton(
             onPressed: () {
-              setState(() {
-                _listBarang.removeWhere((b) => b.id == barang.id);
-              });
+              _deleteBarangAPI(barang.id);
               Navigator.pop(context);
-              _showSnackBar('✓ Barang berhasil dihapus!', Colors.red);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
@@ -176,17 +382,27 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     );
   }
 
+  // PERBAIKAN: Profile yang kompatibel dengan web
   void _showProfile() {
+    // Hitung statistik dari data API
+    int totalBarang = _listBarang.length;
+    int totalStok = _listBarang.fold<int>(0, (sum, item) => sum + item.stok);
+    int totalNilai = _listBarang.fold<int>(0, (sum, item) => sum + (item.harga * item.stok));
+    
+    // Kategori unik
+    Set<String> kategoriUnik = _listBarang.map((e) => e.kategori).toSet();
+    int totalKategori = kategoriUnik.length;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.7,
+        height: MediaQuery.of(context).size.height * 0.85,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
             colors: [
               Color(0xFF1E88E5),
               Color(0xFF64B5F6),
@@ -210,47 +426,101 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
               ),
             ),
             const SizedBox(height: 30),
-            Hero(
-              tag: 'profile_avatar',
-              child: Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.blue.withOpacity(0.3),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
+            
+            // Foto Profile yang bisa diubah - KOMPATIBEL WEB
+            Stack(
+              children: [
+                GestureDetector(
+                  onTap: _pickProfileImage,
+                  child: Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.blue.withOpacity(0.3),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                      border: Border.all(
+                        color: Colors.white,
+                        width: 4,
+                      ),
                     ),
-                  ],
+                    child: _buildProfileImage(), // Widget yang sudah dikustom untuk web/mobile
+                  ),
                 ),
-                child: const Icon(
-                  Icons.person,
-                  size: 60,
-                  color: Color(0xFF1E88E5),
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: GestureDetector(
+                    onTap: _pickProfileImage,
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF1E88E5),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.camera_alt,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
+            
             const SizedBox(height: 20),
-            const Text(
-              'Admin Dashboard',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+            
+            // Informasi Profile - DI TENGAH
+            const Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  'Muhammad Fadmo Wijaya',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 8),
+                Text(
+                  '15/11/2025',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.white70,
+                  ),
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 16),
+            
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Text(
+                'Data Real-time dari API',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.white,
+                ),
               ),
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'admin@dashboard.com',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.white70,
-              ),
-            ),
-            const SizedBox(height: 40),
+            
+            const SizedBox(height: 30),
+            
             Expanded(
               child: Container(
                 width: double.infinity,
@@ -262,46 +532,184 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                     topRight: Radius.circular(30),
                   ),
                 ),
-                child: Column(
-                  children: [
-                    _buildProfileItem(
-                      icon: Icons.inventory_2_outlined,
-                      title: 'Total Barang',
-                      value: '${_listBarang.length} Items',
-                      color: Colors.blue,
-                    ),
-                    const SizedBox(height: 16),
-                    _buildProfileItem(
-                      icon: Icons.shopping_cart_outlined,
-                      title: 'Total Stok',
-                      value: '${_listBarang.fold<int>(0, (sum, item) => sum + item.stok)} Units',
-                      color: Colors.green,
-                    ),
-                    const SizedBox(height: 16),
-                    _buildProfileItem(
-                      icon: Icons.attach_money,
-                      title: 'Total Nilai',
-                      value: 'Rp ${_formatCurrency(_listBarang.fold<int>(0, (sum, item) => sum + (item.harga * item.stok)))}',
-                      color: Colors.orange,
-                    ),
-                    const Spacer(),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton.icon(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close),
-                        label: const Text('Tutup'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1E88E5),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      // Header Statistik - DI TENGAH
+                      const Column(
+                        children: [
+                          Icon(Icons.analytics_outlined, 
+                              color: Color(0xFF1E88E5), size: 32),
+                          SizedBox(height: 8),
+                          Text(
+                            'Statistik Inventory',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
                           ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Ringkasan data barang inventory',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                      
+                      const SizedBox(height: 24),
+                      
+                      // Grid Statistik - DI TENGAH
+                      GridView(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 1.1,
+                        ),
+                        children: [
+                          _buildProfileItem(
+                            icon: Icons.inventory_2_outlined,
+                            title: 'Total Barang',
+                            value: '$totalBarang Items',
+                            color: Colors.blue,
+                            subtitle: '$totalKategori Kategori',
+                          ),
+                          _buildProfileItem(
+                            icon: Icons.shopping_cart_outlined,
+                            title: 'Total Stok',
+                            value: '$totalStok Units',
+                            color: Colors.green,
+                            subtitle: 'Tersedia',
+                          ),
+                          _buildProfileItem(
+                            icon: Icons.attach_money,
+                            title: 'Total Nilai',
+                            value: 'Rp ${_formatCurrency(totalNilai)}',
+                            color: Colors.orange,
+                            subtitle: 'Inventory',
+                          ),
+                          _buildProfileItem(
+                            icon: Icons.schedule, // GANTI DARI avg_time
+                            title: 'Rata-rata',
+                            value: totalBarang > 0 
+                                ? 'Rp ${_formatCurrency(totalNilai ~/ totalStok)}'
+                                : 'Rp 0',
+                            color: Colors.purple,
+                            subtitle: 'Per Unit',
+                          ),
+                        ],
+                      ),
+                      
+                      const SizedBox(height: 24),
+                      
+                      // Info Kategori - DI TENGAH
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Column(
+                          children: [
+                            const Icon(Icons.category_outlined, 
+                                color: Color(0xFF1E88E5), size: 32),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Kategori Tersedia',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              kategoriUnik.join(', '),
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                  ],
+                      
+                      const SizedBox(height: 24),
+                      
+                      // Last Update - DI TENGAH
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        child: Column(
+                          children: [
+                            const Icon(Icons.update, size: 20, color: Colors.grey),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Terakhir update: ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
+                              style: const TextStyle(
+                                color: Colors.grey,
+                                fontSize: 12,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 24),
+                      
+                      // Tombol - DI TENGAH
+                      Column(
+                        children: [
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: ElevatedButton.icon(
+                              onPressed: _fetchBarang,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Refresh Data'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF1E88E5),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: OutlinedButton.icon(
+                              onPressed: () => Navigator.pop(context),
+                              icon: const Icon(Icons.close),
+                              label: const Text('Tutup Profile'),
+                              style: OutlinedButton.styleFrom(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -311,11 +719,13 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     );
   }
 
+  // Widget _buildProfileItem yang diperbaiki
   Widget _buildProfileItem({
     required IconData icon,
     required String title,
     required String value,
     required Color color,
+    String subtitle = '',
   }) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -324,7 +734,9 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
         borderRadius: BorderRadius.circular(15),
         border: Border.all(color: color.withOpacity(0.3)),
       ),
-      child: Row(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
             padding: const EdgeInsets.all(12),
@@ -334,29 +746,35 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
             ),
             child: Icon(icon, color: Colors.white, size: 24),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
             ),
+            textAlign: TextAlign.center,
           ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          if (subtitle.isNotEmpty)
+            Text(
+              subtitle,
+              style: TextStyle(
+                color: Colors.grey[500],
+                fontSize: 10,
+              ),
+              textAlign: TextAlign.center,
+            ),
         ],
       ),
     );
@@ -589,9 +1007,9 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Dashboard Barang - Muhammad Fadmo Wijaya',
+                            'Dashboard Barang',
                             style: TextStyle(
-                              fontSize: 32,
+                              fontSize: 28,
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
                             ),
@@ -605,6 +1023,11 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                           ),
                         ],
                       ),
+                    ),
+                    IconButton(
+                      onPressed: _fetchBarang,
+                      icon: const Icon(Icons.refresh, color: Colors.white),
+                      tooltip: 'Refresh Data',
                     ),
                     Hero(
                       tag: 'profile_avatar',
@@ -623,11 +1046,7 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                               ),
                             ],
                           ),
-                          child: const Icon(
-                            Icons.person,
-                            color: Color(0xFF1E88E5),
-                            size: 28,
-                          ),
+                          child: _buildSmallProfileImage(), // Widget yang sudah dikustom
                         ),
                       ),
                     ),
@@ -683,7 +1102,7 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
 
               const SizedBox(height: 20),
 
-              // List Barang
+              // Loading/Error/List Barang
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.only(top: 20),
@@ -694,50 +1113,90 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                       topRight: Radius.circular(30),
                     ),
                   ),
-                  child: _filteredBarang.isEmpty
-                      ? Center(
+                  child: _isLoading
+                      ? const Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(
-                                Icons.inventory_2_outlined,
-                                size: 80,
-                                color: Colors.grey[300],
+                              CircularProgressIndicator(
+                                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1E88E5)),
                               ),
-                              const SizedBox(height: 16),
-                              Text(
-                                _searchQuery.isEmpty
-                                    ? 'Belum ada barang'
-                                    : 'Barang tidak ditemukan',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
+                              SizedBox(height: 16),
+                              Text('Memuat data...'),
                             ],
                           ),
                         )
-                      : ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          itemCount: _filteredBarang.length,
-                          itemBuilder: (context, index) {
-                            final barang = _filteredBarang[index];
-                            return TweenAnimationBuilder(
-                              duration: Duration(milliseconds: 300 + (index * 100)),
-                              tween: Tween<double>(begin: 0, end: 1),
-                              builder: (context, double value, child) {
-                                return Transform.translate(
-                                  offset: Offset(0, 50 * (1 - value)),
-                                  child: Opacity(
-                                    opacity: value,
-                                    child: child,
+                      : _errorMessage.isNotEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.error_outline,
+                                    size: 80,
+                                    color: Colors.red[300],
                                   ),
-                                );
-                              },
-                              child: _buildBarangCard(barang),
-                            );
-                          },
-                        ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    _errorMessage,
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      color: Colors.grey[600],
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 20),
+                                  ElevatedButton(
+                                    onPressed: _fetchBarang,
+                                    child: const Text('Coba Lagi'),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : _filteredBarang.isEmpty
+                              ? Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.inventory_2_outlined,
+                                        size: 80,
+                                        color: Colors.grey[300],
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        _searchQuery.isEmpty
+                                            ? 'Belum ada barang'
+                                            : 'Barang tidak ditemukan',
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : ListView.builder(
+                                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                                  itemCount: _filteredBarang.length,
+                                  itemBuilder: (context, index) {
+                                    final barang = _filteredBarang[index];
+                                    return TweenAnimationBuilder(
+                                      duration: Duration(milliseconds: 300 + (index * 100)),
+                                      tween: Tween<double>(begin: 0, end: 1),
+                                      builder: (context, double value, child) {
+                                        return Transform.translate(
+                                          offset: Offset(0, 50 * (1 - value)),
+                                          child: Opacity(
+                                            opacity: value,
+                                            child: child,
+                                          ),
+                                        );
+                                      },
+                                      child: _buildBarangCard(barang),
+                                    );
+                                  },
+                                ),
                 ),
               ),
             ],
@@ -746,7 +1205,7 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _tambahBarang,
-        backgroundColor: const Color(0xFF1E88E5),
+        backgroundColor: const Color.fromARGB(255, 255, 255, 255),
         icon: const Icon(Icons.add),
         label: const Text('Tambah Barang'),
       ),
@@ -893,4 +1352,15 @@ class Barang {
     required this.stok,
     required this.kategori,
   });
+
+  // Factory method untuk membuat objek Barang dari JSON
+  factory Barang.fromJson(Map<String, dynamic> json) {
+    return Barang(
+      id: json['id'] ?? 0,
+      nama: json['nama'] ?? '',
+      harga: json['harga'] ?? 0,
+      stok: json['stok'] ?? 0, // Default stok 0 jika tidak ada
+      kategori: json['kategori'] ?? 'Umum', // Default kategori jika tidak ada
+    );
+  }
 }
